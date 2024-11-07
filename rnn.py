@@ -31,15 +31,15 @@ class RNN(nn.Module):
 
     def forward(self, inputs):
         # [to fill] obtain hidden layer representation (https://pytorch.org/docs/stable/generated/torch.nn.RNN.html)
-        _, hidden = 
-        # [to fill] obtain output layer representations
+        _, hidden = self.rnn(inputs)
 
-        # [to fill] sum over output 
+        # [to fill] obtain output layer representations
+        z = self.W(hidden[-1])
 
         # [to fill] obtain probability dist.
+        predicted_vector = self.softmax(z)
 
         return predicted_vector
-
 
 def load_data(train_data, val_data):
     with open(train_data) as training_f:
@@ -78,7 +78,6 @@ if __name__ == "__main__":
 
     print("========== Vectorizing data ==========")
     model = RNN(50, args.hidden_dim)  # Fill in parameters
-    # optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     word_embedding = pickle.load(open('./word_embedding.pkl', 'rb'))
 
@@ -125,7 +124,6 @@ if __name__ == "__main__":
                 predicted_label = torch.argmax(output)
 
                 correct += int(predicted_label == gold_label)
-                # print(predicted_label, gold_label)
                 total += 1
                 if loss is None:
                     loss = example_loss
@@ -161,7 +159,6 @@ if __name__ == "__main__":
             predicted_label = torch.argmax(output)
             correct += int(predicted_label == gold_label)
             total += 1
-            # print(predicted_label, gold_label)
         print("Validation completed for epoch {}".format(epoch + 1))
         print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
         validation_accuracy = correct/total
@@ -176,8 +173,7 @@ if __name__ == "__main__":
 
         epoch += 1
 
-
-
-    # You may find it beneficial to keep track of training accuracy or training loss;
-
-    # Think about how to update the model and what this entails. Consider ffnn.py and the PyTorch documentation for guidance
+    # Write out final validation accuracy to results/rnn_test.out
+    os.makedirs('results', exist_ok=True)
+    with open('results/rnn_test.out', 'w') as f:
+        f.write("Final Validation Accuracy: {}\n".format(validation_accuracy))
