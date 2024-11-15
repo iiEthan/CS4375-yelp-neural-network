@@ -10,41 +10,29 @@ import time
 from tqdm import tqdm
 import json
 from argparse import ArgumentParser
+import matplotlib.pyplot as plt
 
 unk = '<UNK>'
-
-
-# Consult the PyTorch documentation for information on the functions used below:
-# https://pytorch.org/docs/stable/torch.html
 class FFNN(nn.Module):
     def __init__(self, input_dim, h):
         super(FFNN, self).__init__()
         self.h = h
         self.W1 = nn.Linear(input_dim, h)
-        self.activation = nn.ReLU()  # The rectified linear unit; one valid choice of activation function
+        self.activation = nn.ReLU()
         self.output_dim = 5
         self.W2 = nn.Linear(h, self.output_dim)
-        self.softmax = nn.LogSoftmax(dim=0)  # The softmax function that converts vectors into probability distributions; computes log probabilities for computational benefits
-        self.loss = nn.NLLLoss()  # The cross-entropy/negative log likelihood loss taught in class
+        self.softmax = nn.LogSoftmax(dim=0)
+        self.loss = nn.NLLLoss()
 
     def compute_Loss(self, predicted_vector, gold_label):
         return self.loss(predicted_vector, gold_label)
 
     def forward(self, input_vector):
-        # [to fill] obtain first hidden layer representation
         h = self.activation(self.W1(input_vector))
-
-        # [to fill] obtain output layer representation
         z = self.W2(h)
-
-        # [to fill] obtain probability dist.
         predicted_vector = self.softmax(z)
-
         return predicted_vector
 
-
-# Returns:
-# vocab = A set of strings corresponding to the vocabulary
 def make_vocab(data):
     vocab = set()
     for document, _ in data:
@@ -52,11 +40,6 @@ def make_vocab(data):
             vocab.add(word)
     return vocab
 
-
-# Returns:
-# vocab = A set of strings corresponding to the vocabulary including <UNK>
-# word2index = A dictionary mapping word/token to its index (a number in 0, ..., V - 1)
-# index2word = A dictionary inverting the mapping of word2index
 def make_indices(vocab):
     vocab_list = sorted(vocab)
     vocab_list.append(unk)
@@ -68,9 +51,6 @@ def make_indices(vocab):
     vocab.add(unk)
     return vocab, word2index, index2word
 
-
-# Returns:
-# vectorized_data = A list of pairs (vector representation of input, y)
 def convert_to_vector_representation(data, word2index):
     vectorized_data = []
     for document, y in data:
@@ -81,7 +61,6 @@ def convert_to_vector_representation(data, word2index):
         vectorized_data.append((vector, y))
     return vectorized_data
 
-
 def load_data(train_data, val_data):
     with open(train_data) as training_f:
         training = json.load(training_f)
@@ -91,12 +70,11 @@ def load_data(train_data, val_data):
     tra = []
     val = []
     for elt in training:
-        tra.append((elt["text"].split(), int(elt["stars"] - 1)))
+        tra.append((elt["text"].split(),int(elt["stars"]-1)))
     for elt in validation:
-        val.append((elt["text"].split(), int(elt["stars"] - 1)))
+        val.append((elt["text"].split(),int(elt["stars"]-1)))
 
     return tra, val
-
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -108,14 +86,11 @@ if __name__ == "__main__":
     parser.add_argument('--do_train', action='store_true')
     args = parser.parse_args()
 
-    # fix random seeds
     random.seed(42)
     torch.manual_seed(42)
 
-    # load data
     print("========== Loading data ==========")
-    train_data, valid_data = load_data(args.train_data,
-                                       args.val_data)  # X_data is a list of pairs (document, y); y in {0,1,2,3,4}
+    train_data, valid_data = load_data(args.train_data, args.val_data)
     vocab = make_vocab(train_data)
     vocab, word2index, index2word = make_indices(vocab)
 
@@ -125,19 +100,22 @@ if __name__ == "__main__":
 
     model = FFNN(input_dim=len(vocab), h=args.hidden_dim)
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+
+    training_losses = []
+    validation_accuracies = []
+
     print("========== Training for {} epochs ==========".format(args.epochs))
     for epoch in range(args.epochs):
         model.train()
         optimizer.zero_grad()
-        loss = None
+        epoch_loss = 0
         correct = 0
         total = 0
         start_time = time.time()
-        print("Training started for epoch {}".format(epoch + 1))
-        random.shuffle(train_data)  # Good practice to shuffle order of training data
+        random.shuffle(train_data)
         minibatch_size = 16
         N = len(train_data)
-        for minibatch_index in tqdm(range(N // minibatch_size)):
+        for minibatch_index in tqdm(range(N // minibatch_size), desc=f"Training Epoch {epoch+1}"):
             optimizer.zero_grad()
             loss = None
             for example_index in range(minibatch_size):
@@ -152,41 +130,36 @@ if __name__ == "__main__":
                 else:
                     loss += example_loss
             loss = loss / minibatch_size
+            epoch_loss += loss.item()
             loss.backward()
             optimizer.step()
-        print("Training completed for epoch {}".format(epoch + 1))
-        print("Training accuracy for epoch {}: {}".format(epoch + 1, correct / total))
-        print("Training time for this epoch: {}".format(time.time() - start_time))
+        training_losses.append(epoch_loss / (N // minibatch_size))
+        train_accuracy = correct / total
+        print(f"Epoch {epoch+1} Training Accuracy: {train_accuracy:.4f}, Loss: {epoch_loss / (N // minibatch_size):.4f}")
 
-        loss = None
+        model.eval()
         correct = 0
         total = 0
-        start_time = time.time()
-        print("Validation started for epoch {}".format(epoch + 1))
-        minibatch_size = 16
-        N = len(valid_data)
-        for minibatch_index in tqdm(range(N // minibatch_size)):
-            optimizer.zero_grad()
-            loss = None
-            for example_index in range(minibatch_size):
-                input_vector, gold_label = valid_data[minibatch_index * minibatch_size + example_index]
-                predicted_vector = model(input_vector)
-                predicted_label = torch.argmax(predicted_vector)
-                correct += int(predicted_label == gold_label)
-                total += 1
-                example_loss = model.compute_Loss(predicted_vector.view(1, -1), torch.tensor([gold_label]))
-                if loss is None:
-                    loss = example_loss
-                else:
-                    loss += example_loss
-            loss = loss / minibatch_size
-        print("Validation completed for epoch {}".format(epoch + 1))
-        print("Validation accuracy for epoch {}: {}".format(epoch + 1, correct / total))
-        print("Validation time for this epoch: {}".format(time.time() - start_time))
+        with torch.no_grad():
+            for minibatch_index in tqdm(range(len(valid_data) // minibatch_size), desc="Validating"):
+                for example_index in range(minibatch_size):
+                    input_vector, gold_label = valid_data[minibatch_index * minibatch_size + example_index]
+                    predicted_vector = model(input_vector)
+                    predicted_label = torch.argmax(predicted_vector)
+                    correct += int(predicted_label == gold_label)
+                    total += 1
+        validation_accuracy = correct / total
+        validation_accuracies.append(validation_accuracy)
+        print(f"Epoch {epoch+1} Validation Accuracy: {validation_accuracy:.4f}")
 
-    # Ensure the 'results' directory exists
     os.makedirs('results', exist_ok=True)
-
-    # Write out final validation accuracy to results/test.out
     with open('results/test.out', 'w') as f:
-        f.write("Final Validation Accuracy: {}\n".format(correct / total))
+        f.write("Final Validation Accuracy: {}\n".format(validation_accuracies[-1]))
+
+    plt.plot(range(1, args.epochs + 1), training_losses, label="Training Loss")
+    plt.plot(range(1, args.epochs + 1), validation_accuracies, label="Validation Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Value")
+    plt.title("Learning Curve")
+    plt.legend()
+    plt.savefig("results/learning_curve_ffnn.png")
